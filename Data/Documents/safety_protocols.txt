@@ -1,0 +1,3 @@
+Operators must follow strict safety protocols during machine operation and maintenance.
+Wear safety gloves, goggles, and secure all clothing.
+Emergency shutdown procedures are listed in section 4 of the manual.

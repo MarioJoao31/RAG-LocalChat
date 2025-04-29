@@ -1,0 +1,3 @@
+All equipment must undergo a pre-use check to ensure safety and reliability.
+Checklist items include: power status, loose parts, and noise levels during operation.
+Maintenance logs must be updated after each check.

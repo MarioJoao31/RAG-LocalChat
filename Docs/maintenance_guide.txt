@@ -1,3 +1,0 @@
-This document provides detailed maintenance procedures for industrial machines.
-Always perform regular maintenance checks every 30 days.
-Replace any damaged parts immediately and report issues to the maintenance supervisor.
