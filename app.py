@@ -1,7 +1,7 @@
 import streamlit as st
 from langchain_community.vectorstores import Chroma
 from src.query_handler import similarity_query
-from src.embedder import get_embedding_function  # make sure this exists
+from src.embedder import get_huggingface_embedder  # make sure this exists
 import os
 
 # Set up Streamlit
@@ -11,7 +11,7 @@ st.title("📚 Document Query Assistant")
 # Load vector store with caching (avoid reloading on every run)
 @st.cache_resource
 def load_vector_store():
-    embedding_function = get_embedding_function()
+    embedding_function = get_huggingface_embedder()
     return Chroma(
         collection_name="main_collection",
         embedding_function=embedding_function,
@@ -24,7 +24,7 @@ vector_store = load_vector_store()
 query = st.text_input("💬 Ask your question:")
 
 if query:
-    results = similarity_query(vector_store, query)
+    results = similarity_query(vector_store, query,1)
 
     if results:
         st.subheader("🔍 Top Results")
