@@ -2,6 +2,8 @@ import streamlit as st
 from langchain_community.vectorstores import Chroma
 from src.query_handler import similarity_query
 from src.embedder import get_huggingface_embedder  # make sure this exists
+from src.rag_pipeline import add_single_file_to_vectorstore
+from src.loader import save_uploaded_file  # make sure this exists
 import os
 
 # Set up Streamlit
@@ -33,3 +35,20 @@ if query:
             st.write(r.page_content[:500] + "...")
     else:
         st.warning("No results found.")
+
+# File uploader
+st.subheader("Add a New Document")
+uploaded_file = st.file_uploader("Upload a .txt, .pdf, or .docx file", type=["txt", "pdf", "docx"])
+
+
+if uploaded_file is not None:
+    try:
+        # Save uploaded file to disk
+        save_uploaded_file(uploaded_file) 
+
+        add_single_file_to_vectorstore(uploaded_file, vector_store)
+
+        st.success(f"File '{uploaded_file.name}' added to the vector store.")
+
+    except Exception as e:
+        st.error(f"Failed to process file: {e}")
