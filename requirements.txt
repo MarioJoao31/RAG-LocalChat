@@ -1,4 +1,5 @@
 langchain 
+langchain-ollama
 langchain-community 
 langchain-experimental 
 langchain-huggingface 
@@ -9,3 +10,4 @@ pymupdf
 chromadb 
 python-dotenv
 streamlit
+ollama

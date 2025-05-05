@@ -38,7 +38,7 @@ def load_documents(directory="Data/Documents"):
                 print(f"Failed to read {file}: {e}")
     return docs
 
-def save_uploaded_file(file, directory="Docs/Documentation"):
+def save_uploaded_file(file, directory="Data/Documents"):
     """
     Saves an uploaded file (from Streamlit, for example) into the specified directory.
     Returns the full path where the file was saved.
