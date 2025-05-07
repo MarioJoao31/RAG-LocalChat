@@ -1,6 +1,8 @@
 import os
 import fitz  # PyMuPDF
 import docx
+import io
+
 
 def read_txt(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
