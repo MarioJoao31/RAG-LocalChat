@@ -6,6 +6,7 @@ from src.rag_pipeline import add_single_file_to_vectorstore, run_rag_pipeline
 from src.loader import save_uploaded_file, load_documents
 from src.db_handler import insert_question_answer
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from src.prompt_template import rag_prompt_template
 
 
 
@@ -39,7 +40,6 @@ def get_num_tokens(prompt):
     return len(tokens)
 
 
-
 vector_store = load_vector_store()
 
 # Initialize state variables
@@ -51,32 +51,33 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 def clear_chat_history():
+    #clear the chat history and reset the state variables
+    st.session_state.chat_history = []
     st.session_state.chat_history = [{"role": "assistant", "content": "Ask me anything."}]
-
-template = """
-You are a helpful assistant. Answer the question based on the context provided.
-If the question is not answerable based on the context, say "I don't know".
-This context is the string output o vectore Store, so take this in consideration.
-Context: {context}
-Question: {question}
-Answer:
-"""
-
-
 
 
 
 # UI UI UI UI UI UI for query input + "+" button
 
 with st.sidebar:
-    st.title('💬 Chatbot')
-    st.write('Create chatbots using various LLM models.')
+    ###### Choose model and parameters
+    st.title('💬 Models and parameters')
+    st.write('Choose the model that you want to use.')
     
-    st.subheader("Models and parameters")
     model = st.selectbox("Select a model",("Models/HuggingFace/gpt2", "Models/HuggingFace/roberta-base-squad2"), key="model")
     if model == "Models/HuggingFace/gpt2":
         model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")
     
+    temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=5.0, value=0.7, step=0.01, help="Randomness of generated output")
+    if temperature >= 1:
+        st.warning('Values exceeding 1 produces more creative and random output as well as increased likelihood of hallucination.')
+    if temperature < 0.1:
+        st.warning('Values approaching 0 produces deterministic output. Recommended starting value is 0.7')
+    
+    top_p = st.sidebar.slider('top_p', min_value=0.01, max_value=1.0, value=0.9, step=0.01, help="Top p percentage of most likely tokens for output generation")
+
+
+
     ################### Load documents from folder
     st.subheader("📂 Load Documents from Local Folder Path")
     st.caption("Enter the absolute path to a local folder containing `.txt`, `.pdf`, or `.docx` files. "
@@ -102,23 +103,6 @@ with st.sidebar:
     
     st.button("🧹 Clear chat", on_click=clear_chat_history)
 
-
-
-
-
-
-#col1, col2, col3 = st.columns([5, 1, 1])
-#with col1:
-#    query = st.chat_input("💬 Ask your question:")
-#
-#with col2:
-#    if not st.session_state.show_uploader:
-#        if st.button("➕", help="Add a document"):
-#            st.session_state.show_uploader = True
-#
-#with col3:
-#    st.button('Clear', on_click=clear_chat_history)
-    
 
 
 # File uploader (only shows when "+" is clicked)
@@ -158,8 +142,6 @@ if query := st.chat_input():
         st.write(query)
 
 
-
-print(f"lenght: {st.session_state.chat_history.__len__()}")
 # Generate a new response if last message is not from assistant
 if st.session_state.chat_history and (
     st.session_state.chat_history[-1]["role"] != "assistant" or
@@ -174,18 +156,19 @@ if st.session_state.chat_history and (
         for msg in st.session_state.chat_history[-4:-1]:  # include last 2-3 turns
             if msg["role"] == "user":
                 chat_history_context += f"Previous Question: {msg['content']}\n"
-                print("chat history-user:"+chat_history_context)
+                
             elif msg["role"] == "assistant":
                 chat_history_context += f"Previous Answer: {msg['content']}\n"
-                print("chat history-user:"+chat_history_context)
-            
+                
+    
+    #TODO: por aqui a logica para passar da db para o bot as mesnagens anteriores para o context
+    # Combine chat history context with vector store results
+    context = chat_history_context + " " + " ".join([doc.page_content for doc in Vector_results])
 
-
-    # Combine the content of the top results into a single string
-    context = " ".join([doc.page_content for doc in Vector_results])
+   
 
     #create the prompt for the LLM
-    formatted_prompt = template.format(context=context, question=query)
+    formatted_prompt = rag_prompt_template.format(context=context, question=query)
 
     #get tokenizer and model
     tokenizer = get_tokenizer()
