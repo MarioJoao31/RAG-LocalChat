@@ -142,10 +142,13 @@ if st.session_state.show_uploader:
             st.error(f"❌ Failed to process file: {e}")
 
 # Store LLM-generated responses
-if "messages" not in st.session_state.keys():
+if "chat_history" not in st.session_state.keys():
     st.session_state.chat_history = [{"role": "assistant", "content": "Ask me anything."}]
 
 
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 #with col1:
 #    query = st.chat_input("💬 Ask your question:")
