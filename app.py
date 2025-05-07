@@ -150,17 +150,6 @@ for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-#with col1:
-#    query = st.chat_input("💬 Ask your question:")
-#
-#with col2:
-#    if not st.session_state.show_uploader:
-#        if st.button("➕", help="Add a document"):
-#            st.session_state.show_uploader = True
-#
-#with col3:
-#    st.button('Clear', on_click=clear_chat_history)
-
 
 # User-provided prompt
 if query := st.chat_input():
@@ -170,12 +159,26 @@ if query := st.chat_input():
 
 
 
-
+print(f"lenght: {st.session_state.chat_history.__len__()}")
 # Generate a new response if last message is not from assistant
-if st.session_state.chat_history[-1]["role"] != "assistant":
-    
+if st.session_state.chat_history and (
+    st.session_state.chat_history[-1]["role"] != "assistant" or
+    st.session_state.chat_history[-1]["content"] != "Ask me anything."
+):
     # results from the vector store 
     Vector_results = similarity_query(vector_store, query, 1)
+
+    # Combine history (e.g., last 1–2 messages) into historical context
+    chat_history_context = ""
+    if len(st.session_state.chat_history) >= 2:
+        for msg in st.session_state.chat_history[-4:-1]:  # include last 2-3 turns
+            if msg["role"] == "user":
+                chat_history_context += f"Previous Question: {msg['content']}\n"
+                print("chat history-user:"+chat_history_context)
+            elif msg["role"] == "assistant":
+                chat_history_context += f"Previous Answer: {msg['content']}\n"
+                print("chat history-user:"+chat_history_context)
+            
 
 
     # Combine the content of the top results into a single string
@@ -216,9 +219,7 @@ if st.session_state.chat_history[-1]["role"] != "assistant":
     st.session_state.chat_history.append({"role": "assistant", "content": answer})
 
     #print the answer to the chat window
-    with st.chat_message("ChatBoty"):
+    with st.chat_message("assistant"):
         st.markdown(answer)
 
-
-#TODO: put the template prompt in another file and load it here.
-#TODO: 
+#TODO: put prompt in another file.
