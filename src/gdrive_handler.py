@@ -25,9 +25,18 @@ def download_all_from_folder(folder_id_or_url, save_path="Data/Documents"):
     drive = authenticate_gdrive()
 
     file_list = drive.ListFile({'q': f"'{folder_id}' in parents and trashed=false"}).GetList()
+    
+    if not file_list:
+        print("❌ No files found in the folder.")
+        return []
 
+    print(f"✅ Found {len(file_list)} files in the folder.")
+
+    # Create save_path directory if it doesn't exist
     if not os.path.exists(save_path):
         os.makedirs(save_path)
+
+    downloaded_paths = []
 
     for file in file_list:
         file_name = file['title']
@@ -36,6 +45,10 @@ def download_all_from_folder(folder_id_or_url, save_path="Data/Documents"):
             file.GetContentFile(file_path)
             print(f"✅ Downloaded: {file_name}")
             
+            #add files to the list of downloaded paths
+            downloaded_paths.append(file_path)
+            return downloaded_paths
         except Exception as e:
             print(f"❌ Failed to download {file_name}: {e}")
+            return []
     

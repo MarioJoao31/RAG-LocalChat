@@ -98,10 +98,14 @@ with st.sidebar:
     
     st.button("🧹 Clear chat", on_click=clear_chat_history)
 
-    file_id = st.text_input("🔗 Enter Google Drive file ID to import:")
-    if st.button("📥 Import from Drive") and file_id:
+    folder_link = st.text_input("🔗 Enter Google Drive file ID to import:")
+    if st.button("📥 Import from Drive") and folder_link:
         try:
-            paths = download_all_from_folder(file_id)
+            paths = download_all_from_folder(folder_link)
+
+            if  paths.__len__() == 0:
+                st.error("❌ No files found in the folder.")
+                
             for path in paths:
                 with open(path, "rb") as f:
                     add_single_file_to_vectorstore(f, vector_store)
