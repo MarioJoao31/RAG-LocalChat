@@ -91,28 +91,32 @@ with st.sidebar:
         else:
             st.error("❌ The specified path does not exist.")
     
-    
-
+    ############### Upload single files
     if st.button("➕ Upload single files"):
             st.session_state.show_uploader = True
     
     st.button("🧹 Clear chat", on_click=clear_chat_history)
 
-    folder_link = st.text_input("🔗 Enter Google Drive file ID to import:")
-    if st.button("📥 Import from Drive") and folder_link:
-        try:
-            paths = download_all_from_folder(folder_link)
 
-            if  paths.__len__() == 0:
-                st.error("❌ No files found in the folder.")
-                
-            for path in paths:
-                with open(path, "rb") as f:
-                    add_single_file_to_vectorstore(f, vector_store)
-                st.success(f"✅ File '{os.path.basename(path)}' added from Google Drive.")
-        except Exception as e:
-            print(f"❌ Failed to import file: {e}")
-            st.error(f"❌ Failed to import file: {e}")
+    ################ Load documents from Google Drive
+    st.subheader("🔗 Load Documents from Google Drive")
+    folder_link = st.text_input(" Enter Google Drive folder link to import:")
+    if st.button("📥 Import from Drive") and folder_link:
+        with st.spinner("Importing files from google drive..."):
+            try:
+                paths = download_all_from_folder(folder_link)
+
+                if  paths.__len__() == 0:
+                    st.error("❌ No files found in the folder.")
+
+                for path in paths:
+                    with open(path, "rb") as f:
+                        add_single_file_to_vectorstore(f, vector_store)
+                    st.success(f"✅ Files '{os.path.basename(path)}' added from Google Drive.")
+                st.success(f"✅ {paths.__len__()} files added from Google Drive.")
+            except Exception as e:
+                print(f"❌ Failed to import file: {e}")
+                st.error(f"❌ Failed to import file: {e}")
 
 
 
@@ -196,12 +200,9 @@ if st.session_state.chat_history and (
                 print("Model loaded TinyLlama")
             case _:
                 st.error("Selected model is not supported.")
-
-
     
     #get tokenizer and model
     tokenizer = get_tokenizer(model_name=model.config._name_or_path)
-
 
     # Tokenize and generate
     # Ensure the formatted prompt is not empty
@@ -209,10 +210,13 @@ if st.session_state.chat_history and (
         st.error("❌ The prompt is empty. Please provide a valid query.")
     else:
         inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=512)
+        
+        #validates if the input is empty 
         if inputs["input_ids"].size(1) == 0:
             st.error("❌ Tokenization failed. Please check the input format.")
         else:
-            outputs = model.generate(**inputs, max_new_tokens=100)
+            # Generate output
+            outputs = model.generate(**inputs, max_new_tokens=100, temperature=temperature, top_p=top_p, do_sample=True)
 
     # Decode output
     decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -237,5 +241,3 @@ if st.session_state.chat_history and (
         st.markdown(answer)
 
 
-
-#TODO: add model type to the database table

@@ -46,9 +46,9 @@ def download_all_from_folder(folder_id_or_url, save_path="Data/Documents"):
             print(f"✅ Downloaded: {file_name}")
             
             #add files to the list of downloaded paths
-            downloaded_paths.append(file_path)
-            return downloaded_paths
+            downloaded_paths.append(file_path) 
         except Exception as e:
             print(f"❌ Failed to download {file_name}: {e}")
             return []
+    return downloaded_paths
     
