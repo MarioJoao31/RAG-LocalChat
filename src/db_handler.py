@@ -23,12 +23,12 @@ def get_connection():
     return psycopg2.connect(**DB_CONFIG)
 
 
-def insert_question_answer(question, answer):
+def insert_question_answer(question, answer, model):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO chatbot_history (question, answer) VALUES (%s, %s);
-            """, (question, answer))
+                INSERT INTO chatbot_history (question, answer, model_id) VALUES (%s, %s, %s);
+            """, (question, answer, model))
             conn.commit()
 
 def fetch_all_logs():

@@ -7,6 +7,7 @@ from src.loader import save_uploaded_file, load_documents
 from src.db_handler import insert_question_answer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
+from src.gdrive_handler import download_file_from_drive
 
 
 
@@ -27,17 +28,16 @@ def load_vector_store():
     )
 
 @st.cache_resource(show_spinner=False)
-def get_tokenizer():
+def get_tokenizer(model_name):
     """Get a tokenizer to make sure we're not sending too much text
     text to the Model. Eventually we will replace this with ArcticTokenizer
     """
-    return AutoTokenizer.from_pretrained("Models/HuggingFace/gpt2")
+    if not isinstance(model_name, str):
+        raise ValueError("Model name must be a string.")
 
-def get_num_tokens(prompt):
-    """Get the number of tokens in a given prompt"""
-    tokenizer = get_tokenizer()
-    tokens = tokenizer.tokenize(prompt)
-    return len(tokens)
+    return AutoTokenizer.from_pretrained(model_name)
+
+
 
 
 vector_store = load_vector_store()
@@ -64,9 +64,7 @@ with st.sidebar:
     st.title('💬 Models and parameters')
     st.write('Choose the model that you want to use.')
     
-    model = st.selectbox("Select a model",("Models/HuggingFace/gpt2", "Models/HuggingFace/roberta-base-squad2"), key="model")
-    if model == "Models/HuggingFace/gpt2":
-        model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")
+    model = st.selectbox("Select a model", ("gpt2", "openchat-3.5-0106","TinyLlama-1.1B-Chat-v1.0"), key="model")
     
     temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=5.0, value=0.7, step=0.01, help="Randomness of generated output")
     if temperature >= 1:
@@ -102,6 +100,16 @@ with st.sidebar:
             st.session_state.show_uploader = True
     
     st.button("🧹 Clear chat", on_click=clear_chat_history)
+
+    file_id = st.text_input("🔗 Enter Google Drive file ID to import:")
+    if st.button("📥 Import from Drive") and file_id:
+        try:
+            path = download_file_from_drive(file_id)
+            with open(path, "rb") as f:
+                add_single_file_to_vectorstore(f, vector_store)
+            st.success(f"✅ File '{os.path.basename(path)}' added from Google Drive.")
+        except Exception as e:
+            st.error(f"❌ Failed to import file: {e}")
 
 
 
@@ -161,7 +169,6 @@ if st.session_state.chat_history and (
                 chat_history_context += f"Previous Answer: {msg['content']}\n"
                 
     
-    #TODO: por aqui a logica para passar da db para o bot as mesnagens anteriores para o context
     # Combine chat history context with vector store results
     context = chat_history_context + " " + " ".join([doc.page_content for doc in Vector_results])
 
@@ -170,8 +177,29 @@ if st.session_state.chat_history and (
     #create the prompt for the LLM
     formatted_prompt = rag_prompt_template.format(context=context, question=query)
 
+
+    # Load the model based on user selection
+    match model:
+            case "gpt2":
+                model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")
+                show_parameters = False
+                print("Model loaded GPT2")
+            case "openchat-3.5-0106":
+                print("Model too big")
+                #model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/openchat-3.5-0106")
+            case "TinyLlama-1.1B-Chat-v1.0":
+                show_parameters = True
+                model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
+                print("Model loaded TinyLlama")
+            case _:
+                st.error("Selected model is not supported.")
+
+
+    
     #get tokenizer and model
-    tokenizer = get_tokenizer()
+    tokenizer = get_tokenizer(model_name=model.config._name_or_path)
+
+
     # Tokenize and generate
     # Ensure the formatted prompt is not empty
     if not formatted_prompt.strip():
@@ -194,7 +222,7 @@ if st.session_state.chat_history and (
 
     #save the question and answer to the database
     try:
-        insert_question_answer(query, answer)
+        insert_question_answer(query, answer, model.config._name_or_path)
     except Exception as e:
         print(f"❌ Failed to save question and answer to the database: {e}")
 
@@ -205,4 +233,6 @@ if st.session_state.chat_history and (
     with st.chat_message("assistant"):
         st.markdown(answer)
 
-#TODO: put prompt in another file.
+
+
+#TODO: add model type to the database table

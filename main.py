@@ -3,6 +3,10 @@ from src.db_handler import insert_question_answer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
+from huggingface_hub import hf_hub_download
+hf_hub_download(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0", filename="config.json")
+
+
 template = """
 You are a helpful assistant. Answer the question based on the context provided.
 If the question is not answerable based on the context, say "I don't know".
