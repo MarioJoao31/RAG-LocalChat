@@ -7,10 +7,7 @@ from src.loader import save_uploaded_file, load_documents
 from src.db_handler import insert_question_answer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
-from src.gdrive_handler import download_file_from_drive
-
-
-
+from src.gdrive_handler import download_all_from_folder
 import os
 
 # Set up Streamlit
@@ -104,11 +101,13 @@ with st.sidebar:
     file_id = st.text_input("🔗 Enter Google Drive file ID to import:")
     if st.button("📥 Import from Drive") and file_id:
         try:
-            path = download_file_from_drive(file_id)
-            with open(path, "rb") as f:
-                add_single_file_to_vectorstore(f, vector_store)
-            st.success(f"✅ File '{os.path.basename(path)}' added from Google Drive.")
+            paths = download_all_from_folder(file_id)
+            for path in paths:
+                with open(path, "rb") as f:
+                    add_single_file_to_vectorstore(f, vector_store)
+                st.success(f"✅ File '{os.path.basename(path)}' added from Google Drive.")
         except Exception as e:
+            print(f"❌ Failed to import file: {e}")
             st.error(f"❌ Failed to import file: {e}")
 
 
