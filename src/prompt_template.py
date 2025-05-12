@@ -1,8 +1,18 @@
 rag_prompt_template = """
-You are a Chat bot. Answer the question based on the context provided.
-If the question is not answerable based on the context, say "I don't know".
-This context is the string output of the vector store, so take this in consideration.
-Context: {context}
-Question: {question}
-Answer:
+You are a helpful assistant. Use the provided context and the recent conversation history to answer the user's question. If the answer is not contained within the context, respond with "I don't know the answer, please add more file to my Vector Storage."
+
+Context:
+{retrieved_context}
+
+Conversation History:
+{formatted_history}
+
+Sources:
+{source_list}
+
+Current Question:
+{current_question}
+
+Answer (please cite the source file names when applicable):
 """
+

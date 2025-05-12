@@ -61,9 +61,9 @@ with st.sidebar:
     st.title('💬 Models and parameters')
     st.write('Choose the model that you want to use.')
     
-    model = st.selectbox("Select a model", ("gpt2", "openchat-3.5-0106","TinyLlama-1.1B-Chat-v1.0"), key="model")
+    model = st.selectbox("Select a model", ("TinyLlama-1.1B-Chat-v1.0","gpt2", "openchat-3.5-0106"), key="model")
     
-    temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=5.0, value=0.7, step=0.01, help="Randomness of generated output")
+    temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=1.00, value=0.7, step=0.01, help="Randomness of generated output")
     if temperature >= 1:
         st.warning('Values exceeding 1 produces more creative and random output as well as increased likelihood of hallucination.')
     if temperature < 0.1:
@@ -71,6 +71,41 @@ with st.sidebar:
     
     top_p = st.sidebar.slider('top_p', min_value=0.01, max_value=1.0, value=0.9, step=0.01, help="Top p percentage of most likely tokens for output generation")
 
+    top_k = st.sidebar.slider(
+    'top_k',
+    min_value=0,
+    max_value=100,
+    value=50,
+    step=1,
+    help="Top k most likely tokens to sample from"
+    )
+
+    repetition_penalty = st.sidebar.slider(
+        'repetition_penalty',
+        min_value=0.8,
+        max_value=2.0,
+        value=1.1,
+        step=0.1,
+        help="Penalty for repeated tokens (1.0 = no penalty)"
+    )
+
+    no_repeat_ngram_size = st.sidebar.slider(
+        'no_repeat_ngram_size',
+        min_value=0,
+        max_value=10,
+        value=3,
+        step=1,
+        help="Prevent repetition of n-grams of this size"
+    )
+
+    max_new_tokens = st.sidebar.slider(
+        'max_new_tokens',
+        min_value=1,
+        max_value=512,
+        value=100,
+        step=1,
+        help="Max tokens to generate beyond the input"
+    )
 
 
     ################### Load documents from folder
@@ -141,8 +176,8 @@ if st.session_state.show_uploader:
             st.error(f"❌ Failed to process file: {e}")
 
 # Store LLM-generated responses
-if "chat_history" not in st.session_state.keys():
-    st.session_state.chat_history = [{"role": "assistant", "content": "Ask me anything."}]
+#if "chat_history" not in st.session_state.keys():
+#    st.session_state.chat_history = [{"role": "assistant", "content": "Ask me anything."}]
 
 
 for message in st.session_state.chat_history:
@@ -177,12 +212,26 @@ if st.session_state.chat_history and (
                 
     
     # Combine chat history context with vector store results
-    context = chat_history_context + " " + " ".join([doc.page_content for doc in Vector_results])
+    #context = chat_history_context + " " + " ".join([doc.page_content for doc in Vector_results])
+    context =  " ".join([doc.page_content for doc in Vector_results])
 
-   
+    
+    # Extract source file paths
+    source_paths = [doc.metadata.get("source", "unknown file") for doc in Vector_results]
+    formatted_sources = "\n".join([f"- {path}" for path in source_paths])
 
+        #TODO: Conversational hisotry its not passing !!
+
+    print("Chat history context:", chat_history_context)
+    print("Source List:", formatted_sources)
+
+    print("Context:", context)
     #create the prompt for the LLM
-    formatted_prompt = rag_prompt_template.format(context=context, question=query)
+    formatted_prompt = rag_prompt_template.format(retrieved_context=context,
+                                                formatted_history=chat_history_context,
+                                                source_list=formatted_sources,
+                                                current_question=query
+                                                )
 
 
     # Load the model based on user selection
@@ -216,7 +265,14 @@ if st.session_state.chat_history and (
             st.error("❌ Tokenization failed. Please check the input format.")
         else:
             # Generate output
-            outputs = model.generate(**inputs, max_new_tokens=100, temperature=temperature, top_p=top_p, do_sample=True)
+            outputs = model.generate(**inputs, 
+                    temperature=temperature, 
+                    top_p=top_p, 
+                    do_sample=True, 
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty,
+                    no_repeat_ngram_size=no_repeat_ngram_size,
+                    max_new_tokens=max_new_tokens)
 
     # Decode output
     decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -240,4 +296,6 @@ if st.session_state.chat_history and (
     with st.chat_message("assistant"):
         st.markdown(answer)
 
+
+#TODO: path so when we generate the response it shows the path to the ile 
 

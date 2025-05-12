@@ -59,6 +59,7 @@ def add_single_file_to_vectorstore(file, vector_store=None):
         raise ValueError("File is empty or unreadable.")
 
     metadata = {"source": file.name}
+    
 
     # Get embedding function and splitter
     model = get_sentence_transformer_model()
