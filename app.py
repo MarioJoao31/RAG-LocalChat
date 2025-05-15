@@ -8,6 +8,8 @@ from src.db_handler import insert_question_answer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
 from src.gdrive_handler import download_all_from_folder
+from streamlit_chat import message as chat_message  # Rename to avoid conflict
+
 import os
 
 # Set up Streamlit
@@ -49,12 +51,12 @@ def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetiti
     Returns:
         decoded_output: The generated answer from the model.
     """
-    
+    maximum_model_Tokens = 1024
 
     #get tokenizer and model
     tokenizer = get_tokenizer(model_name=model.config._name_or_path)
 
-    token_count = log_prompt_token_info(formatted_prompt, tokenizer, max_model_tokens=512)
+    token_count = log_prompt_token_info(formatted_prompt, tokenizer, maximum_model_Tokens)
 
     print(f"token_count: {token_count}")
 
@@ -63,7 +65,8 @@ def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetiti
     if not formatted_prompt.strip():
         st.error("❌ The prompt is empty. Please provide a valid query.")
     else:
-        inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=512)
+        #TODO: need to review this part of max new tokens and max model tokens 
+        inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True,max_length=maximum_model_Tokens)
         
         #validates if the input is empty 
         if inputs["input_ids"].size(1) == 0:
@@ -107,13 +110,16 @@ if "show_uploader" not in st.session_state:
     st.session_state.show_uploader = False
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+
+if "past" not in st.session_state:
+    st.session_state.past = []
+if "generated" not in st.session_state:
+    st.session_state.generated = []
 
 def clear_chat_history():
     #clear the chat history and reset the state variables
-    st.session_state.chat_history = []
-    st.session_state.chat_history = [{"role": "assistant", "content": "Ask me anything."}]
+    st.session_state.past = []
+    st.session_state.generated = []
 
 
 def main():
@@ -123,7 +129,7 @@ def main():
         st.title('💬 Models and parameters')
         st.write('Choose the model that you want to use.')
         
-        model = st.selectbox("Select a model", ("TinyLlama-1.1B-Chat-v1.0","gpt2", "openchat-3.5-0106"), key="model")
+        model = st.selectbox("Select a model", ("TinyLlama-1.1B-Chat-v1.0","gpt2"), key="model")
         
         temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=1.00, value=0.7, step=0.01, help="Randomness of generated output")
         if temperature >= 1:
@@ -236,36 +242,35 @@ def main():
                 st.error(f"❌ Failed to process file: {e}")
 
 
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Render chat messages using streamlit-chat
+    for i in range(len(st.session_state.past)):
+        chat_message(st.session_state.past[i], is_user=True, key=f"{i}_user")
+        chat_message(st.session_state.generated[i], key=f"{i}", allow_html=True)
 
 
+    
+
+    query = st.chat_input("Ask your question:")
     # User-provided prompt
-    if query := st.chat_input():
-        st.session_state.chat_history.append({"role": "user", "content": query})
-        with st.chat_message("user"):
-            st.write(query)
+    if query:
+        #append the question to the chat history
+        st.session_state.past.append(query)
+        #write the message of the user
+        chat_message(query, is_user=True, key="user")
 
-
-    # Generate a new response if last message is not from assistant
-    if st.session_state.chat_history and (
-        st.session_state.chat_history[-1]["role"] != "assistant" or
-        st.session_state.chat_history[-1]["content"] != "Ask me anything."
-    ):
         # results from the vector store 
         Vector_results = similarity_query(vector_store, query, 1)
 
         # Combine history (e.g., last 1–2 messages) into historical context
-        chat_history_context = ""
-        if len(st.session_state.chat_history) >= 2:
-            for msg in st.session_state.chat_history[-4:-1]:  # include last 2-3 turns
-                if msg["role"] == "user":
-                    chat_history_context += f"Previous Question: {msg['content']}\n"
-                    
-                elif msg["role"] == "assistant":
-                    chat_history_context += f"Previous Answer: {msg['content']}\n"
-                    
+        #chat_history_context = ""
+        #if len(st.session_state.chat_history) >= 2:
+        #    for msg in st.session_state.chat_history[-4:-1]:  # include last 2-3 turns
+        #        if msg["role"] == "user":
+        #            chat_history_context += f"Previous Question: {msg['content']}\n"
+        #            
+        #        elif msg["role"] == "assistant":
+        #            chat_history_context += f"Previous Answer: {msg['content']}\n"
+                  
         
         # context is only the result of the vector store 
         context =  " ".join([doc.page_content for doc in Vector_results])
@@ -286,16 +291,9 @@ def main():
         # Load the model based on user selection
         match model:
                 case "gpt2":
-                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")
-                    show_parameters = False
-                    print("Model loaded GPT2")
-                case "openchat-3.5-0106":
-                    print("Model too big")
-                    #model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/openchat-3.5-0106")
+                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")               
                 case "TinyLlama-1.1B-Chat-v1.0":
-                    show_parameters = True
                     model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
-                    print("Model loaded TinyLlama")
                 case _:
                     st.error("Selected model is not supported.")
         
@@ -309,18 +307,19 @@ def main():
         else:
             answer = decoded_output.strip()
 
+        #
+        st.session_state.generated.append(answer + "\n\nSources:\n" + formatted_sources)
+
+
         #save the question and answer to the database
         try:
             insert_question_answer(query, answer, model.config._name_or_path)
         except Exception as e:
             print(f"❌ Failed to save question and answer to the database: {e}")
 
-        #save the answer to the chat cache 
-        st.session_state.chat_history.append({"role": "assistant", "content": answer + "\n\nSources:\n" + formatted_sources })
-
         #print the answer to the chat window
-        with st.chat_message("assistant"):
-            st.markdown(answer + "\n\nSources:\n" + formatted_sources)
+        chat_message(answer + "\n\nSources:\n" + formatted_sources, is_user=False, allow_html=True)
+            
 
 
    
