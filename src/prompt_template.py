@@ -10,9 +10,6 @@ Context:
 Conversation History:
 {formatted_history}
 
-Sources (file paths):
-{source_list}
-
 User Question:
 {current_question}
 

@@ -4,7 +4,7 @@ from src.query_handler import similarity_query
 from src.embedder import get_huggingface_embedder
 from src.rag_pipeline import add_single_file_to_vectorstore, run_rag_pipeline
 from src.loader import save_uploaded_file, load_documents
-from src.db_handler import insert_question_answer
+from src.db_handler import insert_question_answer, insert_feedback
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
 from src.gdrive_handler import download_all_from_folder
@@ -183,9 +183,29 @@ def main():
         if st.button("➕ Upload single files"):
                 st.session_state.show_uploader = True
         
+        # File uploader (only shows when "+" is clicked)
+        if st.session_state.show_uploader:
+            uploaded_file = st.file_uploader(
+                "Upload your document",
+                type=["txt", "pdf", "docx"],
+                label_visibility="collapsed",
+                key="file_uploader",
+            )
+            # Check if a file is uploaded
+            if uploaded_file is not None:
+                try:
+                    save_uploaded_file(uploaded_file) 
+                    add_single_file_to_vectorstore(uploaded_file, vector_store)
+                    st.success(f"✅ File '{uploaded_file.name}' added to the vector store.")
+                    # Reset uploader state after successful upload
+                    st.session_state.show_uploader = False
+                    st.session_state.uploaded_file = uploaded_file
+                except Exception as e:
+                    st.error(f"❌ Failed to process file: {e}")
+        
         st.button("🧹 Clear chat", on_click=clear_chat_history)
 
-
+        
         ################ Load documents from Google Drive
         st.subheader("🔗 Load Documents from Google Drive")
         folder_link = st.text_input(" Enter Google Drive folder link to import:")
@@ -206,43 +226,24 @@ def main():
                     print(f"❌ Failed to import file: {e}")
                     st.error(f"❌ Failed to import file: {e}")
 
-    # File uploader (only shows when "+" is clicked)
-    if st.session_state.show_uploader:
-        uploaded_file = st.file_uploader(
-            "Upload your document",
-            type=["txt", "pdf", "docx"],
-            label_visibility="collapsed",
-            key="file_uploader",
-        )
+        
 
-        if uploaded_file is not None:
-            try:
-                save_uploaded_file(uploaded_file) 
-                add_single_file_to_vectorstore(uploaded_file, vector_store)
-                st.success(f"✅ File '{uploaded_file.name}' added to the vector store.")
-                # Reset uploader state after successful upload
-                st.session_state.show_uploader = False
-                st.session_state.uploaded_file = uploaded_file
-            except Exception as e:
-                st.error(f"❌ Failed to process file: {e}")
-
-
+    
     # Render chat messages using streamlit-chat
     for i in range(len(st.session_state.past)):
         chat_message(st.session_state.past[i], is_user=True, key=f"{i}_user")
-        chat_message(st.session_state.generated[i], key=f"{i}", allow_html=True)
-    # Show thumbs up/down buttons
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("👍", key=f"thumbs_up_{len(st.session_state.past)}"):
-            #insert_feedback(query, answer, model.config._name_or_path, "Positive")
-            st.success("Feedback submitted: 👍")
-    with col2:
-        if st.button("👎", key=f"thumbs_down_{len(st.session_state.past)}"):
-            #insert_feedback(query, answer, model.config._name_or_path, "Negative")
-            st.success("Feedback submitted: 👎")
+        
+        bot_msg = st.session_state.generated[i]
+        if isinstance(bot_msg, dict) and "answer" in bot_msg:
+            bot_answer = bot_msg["answer"]
+            bot_sources = bot_msg["sources"]
+            print("Sources debugg:", bot_sources)
+        else:
+            bot_answer = str(bot_msg)
 
-    
+        chat_message(bot_answer + "\n\nSources:\n" + "\n".join(bot_sources), key=f"{i}_ai", allow_html=True)
+        
+
 
     query = st.chat_input("Ask your question:")
     # User-provided prompt
@@ -252,8 +253,17 @@ def main():
         #write the message of the user
         chat_message(query, is_user=True, key="user")
 
+        # Load the model based on user selection
+        match model:
+                case "gpt2":
+                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")               
+                case "TinyLlama-1.1B-Chat-v1.0":
+                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
+                case _:
+                    st.error("Selected model is not supported.")
+
         # results from the vector store 
-        Vector_results = similarity_query(vector_store, query, 1)
+        Vector_results = similarity_query(vector_store, query, 3)
 
         # context is only the result of the vector store 
         context =  " ".join([doc.page_content for doc in Vector_results])
@@ -263,8 +273,20 @@ def main():
         source_paths = [doc.metadata.get("source", "unknown file") for doc in Vector_results]
         formatted_sources = "\n".join([f"- {path}" for path in source_paths])
 
-
-        last_message = st.session_state.generated[-1] if st.session_state.generated else ""
+        #gets the last question and answer and the
+        if st.session_state.past and st.session_state.generated:
+            # Remove sources from the previous answer if present
+            prev_answer = st.session_state.generated[-1]
+            prev_question = st.session_state.past[-1]
+            if isinstance(prev_answer, dict) and 'answer' in prev_answer:
+                answer_text = prev_answer['answer']
+                # Remove sources if appended at the end (split by "\n Sources:")
+                answer_text = answer_text.split("\n Sources:")[0].strip()
+            else:
+                answer_text = str(prev_answer).split("\n Sources:")[0].strip()
+            last_message = f"Question: {prev_question}\nAnswer: {answer_text}"
+        else:
+            last_message = ""
 
         # Truncate context to fit within token budget
         tokenizer = get_tokenizer(model_name=model.config._name_or_path)
@@ -281,29 +303,20 @@ def main():
 
 
         #create the prompt for the LLM
-        formatted_prompt = rag_prompt_template.format(retrieved_context=context,
-                                                    formatted_history=last_message,
-                                                    source_list=formatted_sources,
+        formatted_prompt = rag_prompt_template.format(retrieved_context=retrieved_context_len,
+                                                    formatted_history=formatted_history_len,
                                                     current_question=query
                                                     )
 
-        # Load the model based on user selection
-        match model:
-                case "gpt2":
-                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")               
-                case "TinyLlama-1.1B-Chat-v1.0":
-                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
-                case _:
-                    st.error("Selected model is not supported.")
-        
+
+    
  
         decoded_output = generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens)
 
         
-        
         # Extract the first "Answer:" / gpt2 doesnt have stop sequence, so we need to extract the answer manually
         if "Answer:" in decoded_output:
-            answer = decoded_output.split("Answer:")[1].split("Question:")[0].strip()
+            answer = decoded_output.rsplit("Answer:", 1)[-1].split("Question:")[0].strip()
         else:
             answer = decoded_output.strip()
 
@@ -315,10 +328,11 @@ def main():
             print(f"❌ Failed to save question and answer to the database: {e}")
 
         #print the answer to the chat window
-        chat_message(answer + "\n\nSources:\n" + formatted_sources, is_user=False, allow_html=True)
+        chat_message(answer + "\n\nSources:\n" + "\n".join(source_paths), is_user=False, allow_html=True)
 
         st.session_state.generated.append({
-            "answer": answer + "\n\nSources:\n" + formatted_sources,
+            "answer": answer ,
+            "sources":  source_paths,
             "message_id": message_id
         })
 
@@ -327,7 +341,6 @@ def main():
         
 
     #TODO: try to add the upload files all in one button
-    #TODO: put a max token limiter or find a way to resume the context
     #TODO: add question to the hisotry 
     #TODO: create a reward using thumps up or Down and save it to database
 

@@ -41,8 +41,12 @@ def fetch_all_logs():
             cur.execute("SELECT * FROM chatbot_history ORDER BY timestamp DESC;")
             return cur.fetchall()
         
-def fetch_last_answer():
+def insert_feedback(message_id, feedback_type):
     with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM chatbot_history ORDER BY timestamp DESC;")
-            return cur.fetchall()
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO chatbot_feedback (message_id, feedback_type) 
+                VALUES (%s, %s);
+            """, (message_id, feedback_type))
+            conn.commit()
+
