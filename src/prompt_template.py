@@ -7,6 +7,9 @@ You are a knowledgeable and concise assistant. Use only the information provided
 Context:
 {retrieved_context}
 
+Conversation History:
+{formatted_history}
+
 Sources (file paths):
 {source_list}
 

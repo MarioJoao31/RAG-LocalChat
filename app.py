@@ -9,6 +9,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
 from src.gdrive_handler import download_all_from_folder
 from streamlit_chat import message as chat_message  # Rename to avoid conflict
+from langchain.prompts import (
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
+    ChatPromptTemplate
+)
 
 import os
 
@@ -51,14 +57,11 @@ def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetiti
     Returns:
         decoded_output: The generated answer from the model.
     """
-    maximum_model_Tokens = 1024
+    maximum_model_Tokens = 2048
 
     #get tokenizer and model
     tokenizer = get_tokenizer(model_name=model.config._name_or_path)
 
-    token_count = log_prompt_token_info(formatted_prompt, tokenizer, maximum_model_Tokens)
-
-    print(f"token_count: {token_count}")
 
     
     # Ensure the formatted prompt is not empty
@@ -87,22 +90,17 @@ def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetiti
 
     return decoded_output
 
-def log_prompt_token_info(prompt: str, tokenizer, max_model_tokens: int = 512):
-    tokens = tokenizer(prompt, return_tensors="pt")["input_ids"][0]
-    token_count = len(tokens)
-    
-    print(f"\n🔍 Prompt Token Info:")
-    print(f"- Token count: {token_count} / {max_model_tokens}")
-    
-    if token_count > max_model_tokens:
-        print("⚠️ WARNING: Prompt exceeds max token limit. The model input will be truncated.")
-    elif token_count > 0.9 * max_model_tokens:
-        print("⚠️ NOTICE: Prompt is nearing the token limit.")
-    else:
-        print("✅ Prompt is within acceptable range.")
-    
-    return token_count
+def truncate_to_token_budget(text, tokenizer, max_tokens):
+    tokens = tokenizer.encode(text, truncation=True, max_length=max_tokens)
+    return tokenizer.decode(tokens, skip_special_tokens=True)
 
+
+def clear_chat_history():
+    #clear the chat history and reset the state variables
+    st.session_state.past = []
+    st.session_state.generated = []
+
+#load vector store when loading the page 
 vector_store = load_vector_store()
 
 # Initialize state variables
@@ -110,16 +108,11 @@ if "show_uploader" not in st.session_state:
     st.session_state.show_uploader = False
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
-
 if "past" not in st.session_state:
     st.session_state.past = []
 if "generated" not in st.session_state:
     st.session_state.generated = []
 
-def clear_chat_history():
-    #clear the chat history and reset the state variables
-    st.session_state.past = []
-    st.session_state.generated = []
 
 
 def main():
@@ -131,49 +124,41 @@ def main():
         
         model = st.selectbox("Select a model", ("TinyLlama-1.1B-Chat-v1.0","gpt2"), key="model")
         
-        temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=1.00, value=0.7, step=0.01, help="Randomness of generated output")
-        if temperature >= 1:
-            st.warning('Values exceeding 1 produces more creative and random output as well as increased likelihood of hallucination.')
-        if temperature < 0.1:
-            st.warning('Values approaching 0 produces deterministic output. Recommended starting value is 0.7')
-        
-        top_p = st.sidebar.slider('top_p', min_value=0.01, max_value=1.0, value=0.9, step=0.01, help="Top p percentage of most likely tokens for output generation")
+        # Collapsible section for parameters
+        with st.expander("🔧 Generation Parameters", expanded=False):
+            temperature = st.slider(
+                'Temperature', min_value=0.01, max_value=1.00, value=0.7, step=0.01,
+                help="Randomness of generated output"
+            )
+            if temperature >= 1:
+                st.warning('Values exceeding 1 produce more creative/random output and increased hallucinations.')
+            if temperature < 0.1:
+                st.warning('Low values produce more deterministic output. Recommended default: 0.7')
 
-        top_k = st.sidebar.slider(
-        'top_k',
-        min_value=0,
-        max_value=100,
-        value=50,
-        step=1,
-        help="Top k most likely tokens to sample from"
-        )
+            top_p = st.slider(
+                'Top-p (nucleus sampling)', min_value=0.01, max_value=1.0, value=0.9, step=0.01,
+                help="Top-p percentage of most likely tokens for output generation"
+            )
 
-        repetition_penalty = st.sidebar.slider(
-            'repetition_penalty',
-            min_value=0.8,
-            max_value=2.0,
-            value=1.1,
-            step=0.1,
-            help="Penalty for repeated tokens (1.0 = no penalty)"
-        )
+            top_k = st.slider(
+                'Top-k', min_value=0, max_value=100, value=50, step=1,
+                help="Top-k most likely tokens to sample from"
+            )
 
-        no_repeat_ngram_size = st.sidebar.slider(
-            'no_repeat_ngram_size',
-            min_value=0,
-            max_value=10,
-            value=3,
-            step=1,
-            help="Prevent repetition of n-grams of this size"
-        )
+            repetition_penalty = st.slider(
+                'Repetition Penalty', min_value=0.8, max_value=2.0, value=1.1, step=0.1,
+                help="Penalty for repeated tokens (1.0 = no penalty)"
+            )
 
-        max_new_tokens = st.sidebar.slider(
-            'max_new_tokens',
-            min_value=1,
-            max_value=512,
-            value=256,
-            step=1,
-            help="Max tokens to generate beyond the input"
-        )
+            no_repeat_ngram_size = st.slider(
+                'No-Repeat N-Gram Size', min_value=0, max_value=10, value=3, step=1,
+                help="Prevent repetition of n-grams of this size"
+            )
+
+            max_new_tokens = st.slider(
+                'Max New Tokens', min_value=1, max_value=512, value=256, step=1,
+                help="Max tokens to generate beyond the input"
+            )
 
 
         ################### Load documents from folder
@@ -246,7 +231,16 @@ def main():
     for i in range(len(st.session_state.past)):
         chat_message(st.session_state.past[i], is_user=True, key=f"{i}_user")
         chat_message(st.session_state.generated[i], key=f"{i}", allow_html=True)
-
+    # Show thumbs up/down buttons
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("👍", key=f"thumbs_up_{len(st.session_state.past)}"):
+            #insert_feedback(query, answer, model.config._name_or_path, "Positive")
+            st.success("Feedback submitted: 👍")
+    with col2:
+        if st.button("👎", key=f"thumbs_down_{len(st.session_state.past)}"):
+            #insert_feedback(query, answer, model.config._name_or_path, "Negative")
+            st.success("Feedback submitted: 👎")
 
     
 
@@ -261,17 +255,6 @@ def main():
         # results from the vector store 
         Vector_results = similarity_query(vector_store, query, 1)
 
-        # Combine history (e.g., last 1–2 messages) into historical context
-        #chat_history_context = ""
-        #if len(st.session_state.chat_history) >= 2:
-        #    for msg in st.session_state.chat_history[-4:-1]:  # include last 2-3 turns
-        #        if msg["role"] == "user":
-        #            chat_history_context += f"Previous Question: {msg['content']}\n"
-        #            
-        #        elif msg["role"] == "assistant":
-        #            chat_history_context += f"Previous Answer: {msg['content']}\n"
-                  
-        
         # context is only the result of the vector store 
         context =  " ".join([doc.page_content for doc in Vector_results])
 
@@ -281,12 +264,28 @@ def main():
         formatted_sources = "\n".join([f"- {path}" for path in source_paths])
 
 
+        last_message = st.session_state.generated[-1] if st.session_state.generated else ""
+
+        # Truncate context to fit within token budget
+        tokenizer = get_tokenizer(model_name=model.config._name_or_path)
+
+        print("Token counts:")
+        retrieved_context_len = truncate_to_token_budget(context, tokenizer, 1000)
+        formatted_history_len = truncate_to_token_budget(last_message, tokenizer, 500)
+        query_len = truncate_to_token_budget(query, tokenizer, 300)
+
+
+        print("Context:", len(tokenizer.encode(retrieved_context_len)))
+        print("History:", len(tokenizer.encode(formatted_history_len)))
+        print("Query:", len(tokenizer.encode(query_len)))
+
+
         #create the prompt for the LLM
         formatted_prompt = rag_prompt_template.format(retrieved_context=context,
+                                                    formatted_history=last_message,
                                                     source_list=formatted_sources,
                                                     current_question=query
                                                     )
-
 
         # Load the model based on user selection
         match model:
@@ -297,9 +296,10 @@ def main():
                 case _:
                     st.error("Selected model is not supported.")
         
-
+ 
         decoded_output = generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens)
 
+        
         
         # Extract the first "Answer:" / gpt2 doesnt have stop sequence, so we need to extract the answer manually
         if "Answer:" in decoded_output:
@@ -307,22 +307,29 @@ def main():
         else:
             answer = decoded_output.strip()
 
-        #
-        st.session_state.generated.append(answer + "\n\nSources:\n" + formatted_sources)
 
-
-        #save the question and answer to the database
+        #save the question and answer to the database and return 
         try:
-            insert_question_answer(query, answer, model.config._name_or_path)
+            message_id = insert_question_answer(query, answer, model.config._name_or_path)
         except Exception as e:
             print(f"❌ Failed to save question and answer to the database: {e}")
 
         #print the answer to the chat window
         chat_message(answer + "\n\nSources:\n" + formatted_sources, is_user=False, allow_html=True)
-            
 
+        st.session_state.generated.append({
+            "answer": answer + "\n\nSources:\n" + formatted_sources,
+            "message_id": message_id
+        })
 
-   
+        #reset source list
+        source_paths = []
+        
+
+    #TODO: try to add the upload files all in one button
     #TODO: put a max token limiter or find a way to resume the context
+    #TODO: add question to the hisotry 
+    #TODO: create a reward using thumps up or Down and save it to database
+
 if __name__ == "__main__":
     main()

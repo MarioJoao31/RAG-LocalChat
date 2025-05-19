@@ -27,11 +27,21 @@ def insert_question_answer(question, answer, model):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO chatbot_history (question, answer, model_id) VALUES (%s, %s, %s);
+                INSERT INTO chatbot_history (question, answer, model_id)
+                VALUES (%s, %s, %s)
+                RETURNING id;
             """, (question, answer, model))
+            inserted_id = cur.fetchone()[0]
             conn.commit()
+            return inserted_id
 
 def fetch_all_logs():
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM chatbot_history ORDER BY timestamp DESC;")
+            return cur.fetchall()
+        
+def fetch_last_answer():
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM chatbot_history ORDER BY timestamp DESC;")
