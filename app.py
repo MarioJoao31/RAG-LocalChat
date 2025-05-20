@@ -100,6 +100,36 @@ def clear_chat_history():
     st.session_state.past = []
     st.session_state.generated = []
 
+def render_chat_messages(prefix = ""):
+    for i in range(len(st.session_state.past)):
+        chat_message(st.session_state.past[i], is_user=True, key=f"{prefix}{i}_user")
+        
+        # Extract bot data
+        bot_msg = st.session_state.generated[i]
+        if isinstance(bot_msg, dict) and "answer" in bot_msg:
+            bot_answer = bot_msg["answer"]
+            bot_sources = bot_msg.get("sources", [])
+        else:
+            bot_answer = str(bot_msg)
+            bot_sources = []
+
+        chat_message(bot_answer + "\n\nSources:\n" + "\n".join(bot_sources), key=f"{prefix}{i}_ai", allow_html=True)
+
+        # Feedback buttons
+        col1, col2, col3, col4, col5 = st.columns([.25, .25, 1, 1, 1])
+        with col1:
+            thumbs_up_clicked = st.button("👍", key=f"{prefix}{i}_thumbs_up")
+        with col2:
+            thumbs_down_clicked = st.button("👎", key=f"{prefix}{i}_thumbs_down")
+        
+        if thumbs_up_clicked:
+            insert_feedback(st.session_state.generated[i].get("message_id"), "positive")
+            st.success("Feedback submitted", icon="👍")
+        elif thumbs_down_clicked:
+            insert_feedback(st.session_state.generated[i].get("message_id"), "negative")
+            st.success("Feedback submitted", icon="👎")
+
+
 #load vector store when loading the page 
 vector_store = load_vector_store()
 
@@ -226,123 +256,112 @@ def main():
                     print(f"❌ Failed to import file: {e}")
                     st.error(f"❌ Failed to import file: {e}")
 
-        
-
     
     # Render chat messages using streamlit-chat
-    for i in range(len(st.session_state.past)):
-        chat_message(st.session_state.past[i], is_user=True, key=f"{i}_user")
-        
-        bot_msg = st.session_state.generated[i]
-        if isinstance(bot_msg, dict) and "answer" in bot_msg:
-            bot_answer = bot_msg["answer"]
-            bot_sources = bot_msg["sources"]
-            print("Sources debugg:", bot_sources)
-        else:
-            bot_answer = str(bot_msg)
-
-        chat_message(bot_answer + "\n\nSources:\n" + "\n".join(bot_sources), key=f"{i}_ai", allow_html=True)
-        
+    # Render existing chat history
+    render_chat_messages("initial_")
 
 
     query = st.chat_input("Ask your question:")
     # User-provided prompt
     if query:
-        #append the question to the chat history
-        st.session_state.past.append(query)
-        #write the message of the user
-        chat_message(query, is_user=True, key="user")
+        with st.spinner("Generating Response..."):
+            #append the question to the chat history
+            st.session_state.past.append(query)
 
-        # Load the model based on user selection
-        match model:
-                case "gpt2":
-                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")               
-                case "TinyLlama-1.1B-Chat-v1.0":
-                    model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
-                case _:
-                    st.error("Selected model is not supported.")
+            # Load the model based on user selection
+            match model:
+                    case "gpt2":
+                        model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/gpt2")               
+                    case "TinyLlama-1.1B-Chat-v1.0":
+                        model = AutoModelForCausalLM.from_pretrained("Models/HuggingFace/TinyLlama-1.1B-Chat-v1.0")
+                    case _:
+                        st.error("Selected model is not supported.")
 
-        # results from the vector store 
-        Vector_results = similarity_query(vector_store, query, 3)
+            # results from the vector store 
+            Vector_results = similarity_query(vector_store, query, 3)
 
-        # context is only the result of the vector store 
-        context =  " ".join([doc.page_content for doc in Vector_results])
+            # context is only the result of the vector store 
+            context =  " ".join([doc.page_content for doc in Vector_results])
 
-        
-        # Extract source file paths
-        source_paths = [doc.metadata.get("source", "unknown file") for doc in Vector_results]
-        formatted_sources = "\n".join([f"- {path}" for path in source_paths])
+            
+            # Extract source file paths
+            source_paths = [doc.metadata.get("source", "unknown file") for doc in Vector_results]
+            formatted_sources = "\n".join([f"- {path}" for path in source_paths])
 
-        #gets the last question and answer and the
-        if st.session_state.past and st.session_state.generated:
-            # Remove sources from the previous answer if present
-            prev_answer = st.session_state.generated[-1]
-            prev_question = st.session_state.past[-1]
-            if isinstance(prev_answer, dict) and 'answer' in prev_answer:
-                answer_text = prev_answer['answer']
-                # Remove sources if appended at the end (split by "\n Sources:")
-                answer_text = answer_text.split("\n Sources:")[0].strip()
+            #gets the last question and answer and the
+            if st.session_state.past and st.session_state.generated:
+                # Remove sources from the previous answer if present
+                prev_answer = st.session_state.generated[-1]
+                prev_question = st.session_state.past[-1]
+                if isinstance(prev_answer, dict) and 'answer' in prev_answer:
+                    answer_text = prev_answer['answer']
+                    # Remove sources if appended at the end (split by "\n Sources:")
+                    answer_text = answer_text.split("\n Sources:")[0].strip()
+                else:
+                    answer_text = str(prev_answer).split("\n Sources:")[0].strip()
+                last_message = f"Question: {prev_question}\nAnswer: {answer_text}"
             else:
-                answer_text = str(prev_answer).split("\n Sources:")[0].strip()
-            last_message = f"Question: {prev_question}\nAnswer: {answer_text}"
-        else:
-            last_message = ""
+                last_message = ""
 
-        # Truncate context to fit within token budget
-        tokenizer = get_tokenizer(model_name=model.config._name_or_path)
+            # Truncate context to fit within token budget
+            tokenizer = get_tokenizer(model_name=model.config._name_or_path)
 
-        print("Token counts:")
-        retrieved_context_len = truncate_to_token_budget(context, tokenizer, 1000)
-        formatted_history_len = truncate_to_token_budget(last_message, tokenizer, 500)
-        query_len = truncate_to_token_budget(query, tokenizer, 300)
+            print("Token counts:")
+            retrieved_context_len = truncate_to_token_budget(context, tokenizer, 1000)
+            formatted_history_len = truncate_to_token_budget(last_message, tokenizer, 500)
+            query_len = truncate_to_token_budget(query, tokenizer, 300)
 
 
-        print("Context:", len(tokenizer.encode(retrieved_context_len)))
-        print("History:", len(tokenizer.encode(formatted_history_len)))
-        print("Query:", len(tokenizer.encode(query_len)))
+            print("Context:", len(tokenizer.encode(retrieved_context_len)))
+            print("History:", len(tokenizer.encode(formatted_history_len)))
+            print("Query:", len(tokenizer.encode(query_len)))
 
 
-        #create the prompt for the LLM
-        formatted_prompt = rag_prompt_template.format(retrieved_context=retrieved_context_len,
-                                                    formatted_history=formatted_history_len,
-                                                    current_question=query
-                                                    )
+            #create the prompt for the LLM
+            formatted_prompt = rag_prompt_template.format(retrieved_context=retrieved_context_len,
+                                                        formatted_history=formatted_history_len,
+                                                        current_question=query
+                                                        )
 
-
-    
- 
-        decoded_output = generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens)
 
         
-        # Extract the first "Answer:" / gpt2 doesnt have stop sequence, so we need to extract the answer manually
-        if "Answer:" in decoded_output:
-            answer = decoded_output.rsplit("Answer:", 1)[-1].split("Question:")[0].strip()
-        else:
-            answer = decoded_output.strip()
+    
+            decoded_output = generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens)
+
+            
+            # Extract the first "Answer:" / gpt2 doesnt have stop sequence, so we need to extract the answer manually
+            if "Answer:" in decoded_output:
+                answer = decoded_output.rsplit("Answer:", 1)[-1].split("Question:")[0].strip()
+            else:
+                answer = decoded_output.strip()
 
 
-        #save the question and answer to the database and return 
-        try:
-            message_id = insert_question_answer(query, answer, model.config._name_or_path)
-        except Exception as e:
-            print(f"❌ Failed to save question and answer to the database: {e}")
+            #save the question and answer to the database and return 
+            try:
+                message_id = insert_question_answer(query, answer, model.config._name_or_path)
+            except Exception as e:
+                print(f"❌ Failed to save question and answer to the database: {e}")
 
-        #print the answer to the chat window
-        chat_message(answer + "\n\nSources:\n" + "\n".join(source_paths), is_user=False, allow_html=True)
+            
+            st.session_state.generated.append({
+                "answer": answer ,
+                "sources":  source_paths,
+                "message_id": message_id
+            })
+            
+            # Render existing chat history
+            render_chat_messages("post_")
+            
+            #reset source list
+            source_paths = []
 
-        st.session_state.generated.append({
-            "answer": answer ,
-            "sources":  source_paths,
-            "message_id": message_id
-        })
-
-        #reset source list
-        source_paths = []
+            #rerender the page
+            st.rerun()
         
 
     #TODO: try to add the upload files all in one button
-    #TODO: add question to the hisotry 
-    #TODO: create a reward using thumps up or Down and save it to database
+   
 
 if __name__ == "__main__":
     main()

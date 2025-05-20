@@ -45,8 +45,9 @@ def insert_feedback(message_id, feedback_type):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO chatbot_feedback (message_id, feedback_type) 
-                VALUES (%s, %s);
-            """, (message_id, feedback_type))
+                UPDATE chatbot_history
+                SET feedback = %s
+                WHERE id = %s;
+            """, (feedback_type, message_id))
             conn.commit()
 
