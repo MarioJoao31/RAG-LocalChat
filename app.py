@@ -17,6 +17,8 @@ from langchain.prompts import (
 )
 
 import os
+import time
+import wx
 
 # Set up Streamlit
 st.set_page_config(page_title="RAG Q&A", layout="centered")
@@ -41,7 +43,6 @@ def get_tokenizer(model_name):
         raise ValueError("Model name must be a string.")
 
     return AutoTokenizer.from_pretrained(model_name)
-
 
 def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens):
     """Generate an answer using the model and the provided prompt.
@@ -94,16 +95,15 @@ def truncate_to_token_budget(text, tokenizer, max_tokens):
     tokens = tokenizer.encode(text, truncation=True, max_length=max_tokens)
     return tokenizer.decode(tokens, skip_special_tokens=True)
 
-
 def clear_chat_history():
     #clear the chat history and reset the state variables
     st.session_state.past = []
     st.session_state.generated = []
 
-def render_chat_messages(prefix = ""):
+def render_chat_messages(prefix=""):
     for i in range(len(st.session_state.past)):
         chat_message(st.session_state.past[i], is_user=True, key=f"{prefix}{i}_user")
-        
+
         # Extract bot data
         bot_msg = st.session_state.generated[i]
         if isinstance(bot_msg, dict) and "answer" in bot_msg:
@@ -115,19 +115,36 @@ def render_chat_messages(prefix = ""):
 
         chat_message(bot_answer + "\n\nSources:\n" + "\n".join(bot_sources), key=f"{prefix}{i}_ai", allow_html=True)
 
-        # Feedback buttons
-        col1, col2, col3, col4, col5 = st.columns([.25, .25, 1, 1, 1])
-        with col1:
-            thumbs_up_clicked = st.button("👍", key=f"{prefix}{i}_thumbs_up")
+        # Track feedback click state in session state
+        if f"{prefix}{i}_feedback" not in st.session_state:
+            st.session_state[f"{prefix}{i}_feedback"] = None  # None / "up" / "down"
+
+        col1, col2, col3, col4, col5 = st.columns([.25, .20, .20, 1, 1])
         with col2:
-            thumbs_down_clicked = st.button("👎", key=f"{prefix}{i}_thumbs_down")
-        
-        if thumbs_up_clicked:
+            thumbs_up = st.button("👍", key=f"{prefix}{i}_thumbs_up")
+        with col3:
+            thumbs_down = st.button("👎", key=f"{prefix}{i}_thumbs_down")
+
+        if thumbs_up:
             insert_feedback(st.session_state.generated[i].get("message_id"), "positive")
-            st.success("Feedback submitted", icon="👍")
-        elif thumbs_down_clicked:
+            st.session_state[f"{prefix}{i}_feedback"] = "up"
+        elif thumbs_down:
             insert_feedback(st.session_state.generated[i].get("message_id"), "negative")
-            st.success("Feedback submitted", icon="👎")
+            st.session_state[f"{prefix}{i}_feedback"] = "down"
+
+        # Show colored feedback below buttons
+        feedback = st.session_state[f"{prefix}{i}_feedback"]
+        with col4:
+            if feedback == "up":
+                placeholder = st.empty()
+                placeholder.markdown("<span style='color: green; font-weight: bold;'>You liked this response 👍</span>", unsafe_allow_html=True)
+                time.sleep(3)
+                placeholder.empty()
+            elif feedback == "down":
+                placeholder = st.empty()
+                placeholder.markdown("<span style='color: red; font-weight: bold;'>You disliked this response 👎</span>", unsafe_allow_html=True)
+                time.sleep(3)
+                placeholder.empty()
 
 
 #load vector store when loading the page 
@@ -192,23 +209,26 @@ def main():
 
 
         ################### Load documents from folder
-        st.subheader("📂 Load Documents from Local Folder Path")
-        st.caption("Enter the absolute path to a local folder containing `.txt`, `.pdf`, or `.docx` files. "
-                "All valid documents inside the folder and its subfolders will be processed and added to the vector database.")
-
-        folder_path = st.text_input(
-            "📁 Enter local folder path to load documents recursively:",
-            placeholder="e.g., C:/Users/YourName/Documents/ProjectDocs"
-        )
-
-        if folder_path and st.button("Load Folder to Vector Store"):
-            if os.path.isdir(folder_path):
-                docs = load_documents(folder_path)
-                run_rag_pipeline(docs)
-                st.success(f"✅ Added documents from the folder path: {folder_path}.")
-            else:
-                st.error("❌ The specified path does not exist.")
-        
+        st.subheader("📂 Load Documents from Local Folder Path or single files")
+       
+         ######## Folders button
+        if st.button("➕ Upload Folders"):
+            app = wx.App(False)
+            dialog = wx.DirDialog(None, "Select a folder:", style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+            
+            if dialog.ShowModal() == wx.ID_OK:
+                folder_path = dialog.GetPath()
+                
+                #verify if its path 
+                if os.path.isdir(folder_path):
+                    docs = load_documents(folder_path)
+                    run_rag_pipeline(docs)
+                    st.success(f"✅ Added documents from the folder path: {folder_path}.")
+                else:
+                    st.error("❌ The specified path does not exist.")
+                
+            dialog.Destroy()
+            
         ############### Upload single files
         if st.button("➕ Upload single files"):
                 st.session_state.show_uploader = True
@@ -361,7 +381,7 @@ def main():
         
 
     #TODO: try to add the upload files all in one button
-   
+   #TODO: change the color of the button isnted of the alert 
 
 if __name__ == "__main__":
     main()
