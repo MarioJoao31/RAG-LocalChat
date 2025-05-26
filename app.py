@@ -15,7 +15,7 @@ from langchain.prompts import (
     MessagesPlaceholder,
     ChatPromptTemplate
 )
-
+from langsmith import traceable
 import os
 import time
 import wx
@@ -44,6 +44,7 @@ def get_tokenizer(model_name):
 
     return AutoTokenizer.from_pretrained(model_name)
 
+@traceable
 def generate_answer(model, formatted_prompt, temperature, top_p, top_k, repetition_penalty, no_repeat_ngram_size, max_new_tokens):
     """Generate an answer using the model and the provided prompt.
     Args:
