@@ -5,6 +5,8 @@ import os
 from src.loader import read_file, load_documents
 from src.embedder import get_sentence_transformer_model, LocalEmbeddingFunction
 from src.retriever import create_vector_store, add_documents_to_store, similarity_query
+from src.agentic_chunker import AgenticChunker
+
 
 def run_rag_pipeline(docs=None):
     """
@@ -17,9 +19,21 @@ def run_rag_pipeline(docs=None):
     texts = [doc['text'] for doc in docs]
     metadatas = [{"source": doc['path']} for doc in docs]
 
+    #Agentic chunker 
+    
+    #ac = AgenticChunker()
+    #ac.add_propositions(texts)
+    #print(ac.pretty_print_chunks())
+    #chunks = ac.get_chunks(get_type='list_of_strings')
+    #print(chunks)
+    #documents = [Document(page_content=chunk, metadata={"source": "local"}) for chunk in chunks]
+    
+
+    #vector store and embedding function model 
     model = get_sentence_transformer_model()
     embedding_function = LocalEmbeddingFunction(model)
-
+   
+    # Semantic chunker
     text_splitter = SemanticChunker(
         embedding_function,
         breakpoint_threshold_type="percentile"

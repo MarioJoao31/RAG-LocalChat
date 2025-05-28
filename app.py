@@ -9,13 +9,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.prompt_template import rag_prompt_template
 from src.gdrive_handler import download_all_from_folder
 from streamlit_chat import message as chat_message  # Rename to avoid conflict
-from langchain.prompts import (
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-    ChatPromptTemplate
-)
 from langsmith import traceable
+from src.agents.file_writer_agent import file_writer_agent  # Assuming this is your agent logic
+
 import os
 import time
 import wx
@@ -23,6 +19,7 @@ import wx
 # Set up Streamlit
 st.set_page_config(page_title="RAG Q&A", layout="centered")
 st.title("📚 Document Query Assistant")
+
 
 # Load vector store with caching
 @st.cache_resource
@@ -147,6 +144,14 @@ def render_chat_messages(prefix=""):
                 time.sleep(3)
                 placeholder.empty()
 
+def should_use_file_writer_agent(query: str) -> bool:
+    file_intent_keywords = [
+        "save to file", "write a file", "generate document", 
+        "create file", "write to disk", "output to txt", 
+        "generate markdown", "write code to file"
+    ]
+    query_lower = query.lower()
+    return any(kw in query_lower for kw in file_intent_keywords)
 
 #load vector store when loading the page 
 vector_store = load_vector_store()
@@ -277,16 +282,20 @@ def main():
                     print(f"❌ Failed to import file: {e}")
                     st.error(f"❌ Failed to import file: {e}")
 
-    
     # Render chat messages using streamlit-chat
     # Render existing chat history
     render_chat_messages("initial_")
-
-
+    
+    
     query = st.chat_input("Ask your question:")
     # User-provided prompt
     if query:
         with st.spinner("Generating Response..."):
+            
+            
+                    
+               
+            
             #append the question to the chat history
             st.session_state.past.append(query)
 
@@ -357,7 +366,14 @@ def main():
             else:
                 answer = decoded_output.strip()
 
-
+            # logic to check if the question should be handled by the file writer agent
+            if should_use_file_writer_agent(query):
+                with st.spinner("Using file writer agent..."):
+                    # Write the answer to a local file
+                        output_file = "local_model_answer.txt"
+                        with open(output_file, "w", encoding="utf-8") as file:
+                            file.write(answer)
+            
             #save the question and answer to the database and return 
             try:
                 message_id = insert_question_answer(query, answer, model.config._name_or_path)
@@ -374,15 +390,13 @@ def main():
             # Render existing chat history
             render_chat_messages("post_")
             
+            
             #reset source list
             source_paths = []
 
             #rerender the page
             st.rerun()
         
-
-    #TODO: try to add the upload files all in one button
-   #TODO: change the color of the button isnted of the alert 
 
 if __name__ == "__main__":
     main()
