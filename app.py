@@ -146,7 +146,7 @@ def render_chat_messages(prefix=""):
 
 def should_use_file_writer_agent(query: str) -> bool:
     file_intent_keywords = [
-        "save to file", "write a file", "generate document", 
+        "save to a file", "write a file", "generate document", 
         "create file", "write to disk", "output to txt", 
         "generate markdown", "write code to file"
     ]
