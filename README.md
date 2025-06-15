@@ -1,6 +1,6 @@
 # 📚 RAG Document Query Assistant
 
-This project implements a modular Retrieval-Augmented Generation (RAG) pipeline with a user-friendly Streamlit interface. It allows you to ingest, chunk, embed, store, and query documents (PDF, DOCX, TXT) using local or cloud-based embedding models and a vector store.
+This project implements a modular **Retrieval-Augmented Generation (RAG)** pipeline with a user-friendly **Streamlit** interface. It allows you to ingest, chunk, embed, store, and query documents (PDF, DOCX, TXT) using local or cloud-based embedding models and a vector store. The system is built using **LangChain** and **LangSmith** for pipeline orchestration, observability, and experimentation.
 
 ---
 
@@ -11,6 +11,10 @@ This project implements a modular Retrieval-Augmented Generation (RAG) pipeline 
 - 🧹 **Semantic Chunking** with `SemanticChunker`  
 - 🗂️ **Vector Store** via ChromaDB  
 - 💬 **Natural Language Query Interface** (Streamlit)  
+- 🔄 **Multiple Answer Generation Models** (switch dynamically in UI)  
+- 🔗 **Google Drive Folder Linking** for document ingestion  
+- 🧪 **LangChain + LangSmith Integration** for modular pipelines and tracing  
+- 🧠 **Feedback (Like/Dislike)** system for user-based reward signals and future retraining
 
 ---
 
@@ -26,6 +30,8 @@ pip install -r requirements.txt
 
 ```bash
 GOOGLE_API_KEY=your_google_genai_api_key  # if using Google embeddings
+LANGCHAIN_API_KEY=your_langchain_api_key
+LANGCHAIN_TRACING_V2=true
 ```
 
 ### 🗃️ Load and Process Docs
@@ -50,6 +56,19 @@ You can switch between:
 
 ---
 
+## 🤖 Answer Generation Models
+
+You can switch between:
+ - 💡 Multiple model selection (LLM choices) directly from the UI
+ - Easily pluggable using llm_router.py and LangChain agents
+
+--- 
+## ❤️ Reward Feedback Feature
+
+Users can provide feedback (👍 Like / 👎 Dislike) on each response.
+This feedback is stored for future use in fine-tuning or retraining the LLM components, enabling continuous improvement based on user preferences.
+
+---
 ## 🔗 Google Drive Upload Setup
 
 To enable file upload directly from Google Drive:
